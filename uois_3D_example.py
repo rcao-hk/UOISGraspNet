@@ -6,7 +6,7 @@
 # In[ ]:
 
 
-get_ipython().run_line_magic('matplotlib', 'inline')
+# get_ipython().run_line_magic('matplotlib', 'inline')
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "0" # TODO: Change this if you have more than 1 GPU
 
@@ -95,7 +95,7 @@ uois3d_config = {
 # Biqi
 checkpoint_dir = './checkpoints/' # TODO: change this to directory of downloaded models
 # Biqi
-dsn_filename = checkpoint_dir + 'DepthSeedingNetwork_3D_TOD_checkpoint.pth'
+dsn_filename = checkpoint_dir + 'DSN_3D_TOD_checkpoint.pth'
 rrn_filename = checkpoint_dir + 'RRN_OID_checkpoint.pth'
 uois3d_config['final_close_morphology'] = True
 uois_net_3d = segmentation.UOISNet3D(uois3d_config, 

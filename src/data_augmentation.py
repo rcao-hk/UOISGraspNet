@@ -5,7 +5,9 @@ import cv2
 
 # My Libraries
 import sys
-sys.path.append('/research/d6/gds/bqyang/uois/src')
+import os
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(ROOT_DIR)
 from util import utilities as util_
 
 ##### Useful Utilities #####

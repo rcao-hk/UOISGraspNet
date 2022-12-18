@@ -307,7 +307,7 @@ class RRNWrapper(NetworkWrapper):
             probs = torch.sigmoid(logits) # Shape: [N x H x W]
             masks = probs > threshold 
 
-        return Masks
+        return masks
 
 class UOISNet3D(object):
     """ Class to encapsulate both Depth Seeding Network and RGB Refinement Network. """

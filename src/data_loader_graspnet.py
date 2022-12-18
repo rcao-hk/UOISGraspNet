@@ -6,7 +6,7 @@ import numpy as np
 import glob
 import cv2
 import json
-import pybullet as p
+# import pybullet as p
 import scipy.io as scio
 from plyfile import PlyData
 
@@ -44,7 +44,7 @@ class Tabletop_Object_Dataset(Dataset):
         self.train_or_test = train_or_test
 
         # Get a list of all scenes
-        self.scene_dirs = sorted(glob.glob(self.base_dir + '/scene*/'))
+        self.scene_dirs = sorted(glob.glob(self.base_dir + 'scenes/scene*/'))
 
         if self.train_or_test == 'train':
             self.scene_dirs = self.scene_dirs[:100]
