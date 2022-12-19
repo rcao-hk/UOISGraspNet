@@ -26,7 +26,9 @@ import src.segmentation as segmentation
 import src.evaluation as evaluation
 import src.util.utilities as util_
 import src.util.flowlib as flowlib
-
+from PIL import Image
+from data_utils import CameraInfo, create_point_cloud_from_depth_image
+import scipy.io as scio
 
 # ## Depth Seeding Network Parameters
 
@@ -112,33 +114,57 @@ uois_net_3d = segmentation.UOISNet3D(uois3d_config,
 
 # In[ ]:
 
+scene_idx = 0
+frame_idx = 20
+camera = 'realsense'
+N = 4
+dataset_root = ''
+rgb_path = '/media/rcao/Data/Dataset/graspnet/scenes/scene_{:04}/{}/rgb/{:04}.png'.format(scene_idx, camera, frame_idx)
+depth_path = '/media/rcao/Data/Dataset/graspnet/scenes/scene_{:04}/{}/depth/{:04}.png'.format(scene_idx, camera, frame_idx)
+mask_path = '/media/rcao/Data/Dataset/graspnet/scenes/scene_{:04}/{}/label/{:04}.png'.format(scene_idx, camera, frame_idx)
+meta_path = '/media/rcao/Data/Dataset/graspnet/scenes/scene_{:04}/{}/meta/{:04}.mat'.format(scene_idx, camera, frame_idx)
 
-example_images_dir = os.path.abspath('.') + '/example_images/'
-# Biqi
-OSD_image_files = sorted(glob.glob(example_images_dir + '/OSD_*.npy'))
-OCID_image_files = sorted(glob.glob(example_images_dir + '/OCID_*.npy'))
-N = len(OSD_image_files) + len(OCID_image_files)
+width = 1280
+height = 720
 
-rgb_imgs = np.zeros((N, 480, 640, 3), dtype=np.float32)
-xyz_imgs = np.zeros((N, 480, 640, 3), dtype=np.float32)
-label_imgs = np.zeros((N, 480, 640), dtype=np.uint8)
+# example_images_dir = os.path.abspath('.') + '/example_images/'
+# # Biqi
+# OSD_image_files = sorted(glob.glob(example_images_dir + '/OSD_*.npy'))
+# OCID_image_files = sorted(glob.glob(example_images_dir + '/OCID_*.npy'))
+# N = len(OSD_image_files) + len(OCID_image_files)
 
-for i, img_file in enumerate(OSD_image_files + OCID_image_files):
-    d = np.load(img_file, allow_pickle=True, encoding='bytes').item()
-    
+rgb_imgs = np.zeros((N, height, width, 3), dtype=np.float32)
+xyz_imgs = np.zeros((N, height, width, 3), dtype=np.float32)
+label_imgs = np.zeros((N, height, width), dtype=np.uint8)
+
+for i, img_file in enumerate(range(N)):
+# for i, img_file in enumerate(OSD_image_files + OCID_image_files):
+#     d = np.load(img_file, allow_pickle=True, encoding='bytes').item()
+
+    color = np.array(Image.open(rgb_path), dtype=np.float32)
+    depth = np.array(Image.open(depth_path))
+    seg = np.array(Image.open(mask_path))
+
+    meta = scio.loadmat(meta_path)
+
+    intrinsics = meta['intrinsic_matrix']
+    factor_depth = meta['factor_depth']
+    camera_info = CameraInfo(width, height, intrinsics[0][0], intrinsics[1][1], intrinsics[0][2], intrinsics[1][2], factor_depth)
+    cloud = create_point_cloud_from_depth_image(depth, camera_info, organized=True)
+
     # RGB
-    rgb_img = d['rgb']
+    rgb_img = color
     rgb_imgs[i] = data_augmentation.standardize_image(rgb_img)
 
     # XYZ
-    xyz_imgs[i] = d['xyz']
+    xyz_imgs[i] = cloud
 
     # Label
-    label_imgs[i] = d['label']
+    label_imgs[i] = seg
     
 batch = {
-    'rgb' : data_augmentation.array_to_tensor(rgb_imgs),
-    'xyz' : data_augmentation.array_to_tensor(xyz_imgs),
+    'rgb': data_augmentation.array_to_tensor(rgb_imgs),
+    'xyz': data_augmentation.array_to_tensor(xyz_imgs),
 }
 
 
@@ -171,21 +197,22 @@ fig_index = 1
 for i in range(N):
     
     num_objs = max(np.unique(seg_masks[i,...]).max(), np.unique(label_imgs[i,...]).max()) + 1
-    
     rgb = rgb_imgs[i].astype(np.uint8)
     depth = xyz_imgs[i,...,2]
     seg_mask_plot = util_.get_color_mask(seg_masks[i,...], nc=num_objs)
+    init_mask_plot = util_.get_color_mask(initial_masks[i,...], nc=num_objs)
     gt_masks = util_.get_color_mask(label_imgs[i,...], nc=num_objs)
     
-    images = [rgb, depth, seg_mask_plot, gt_masks]
+    images = [rgb, depth, init_mask_plot, seg_mask_plot, gt_masks]
     titles = [f'Image {i+1}', 'Depth',
+              f"Init Masks. #objects: {np.unique(initial_masks[i,...]).shape[0]-1}",
               f"Refined Masks. #objects: {np.unique(seg_masks[i,...]).shape[0]-1}",
               f"Ground Truth. #objects: {np.unique(label_imgs[i,...]).shape[0]-1}"
              ]
     util_.subplotter(images, titles, fig_num=i+1)
     
     # Run evaluation metric
-    eval_metrics = evaluation.multilabel_metrics(seg_masks[i,...], label_imgs[i])
+    eval_metrics = evaluation.multilabel_metrics(initial_masks[i,...], label_imgs[i])
     print(f"Image {i+1} Metrics:")
     print(eval_metrics)
 
