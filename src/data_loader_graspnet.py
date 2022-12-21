@@ -8,18 +8,23 @@ import cv2
 import json
 # import pybullet as p
 import scipy.io as scio
-from plyfile import PlyData
 
 import sys
 sys.path.append('./src')
 from util import utilities as util_
 import data_augmentation
 
+from tqdm import tqdm
+from graspnetAPI.utils.utils import get_obj_pose_list, transform_points
+from graspnetAPI.utils.xmlhandler import xmlReader
+from graspnetAPI.utils.utils import CameraInfo, create_point_cloud_from_depth_image
+
 NUM_VIEWS_PER_SCENE = 256
 
 BACKGROUND_LABEL = 0
 TABLE_LABEL = 0
 OBJECTS_LABEL = 1
+num_points = 1024
 
 
 ###### Some utilities #####
@@ -36,8 +41,6 @@ def worker_init_fn(worker_id):
 class Tabletop_Object_Dataset(Dataset):
     """ Data loader for Tabletop Object Dataset
     """
-
-
     def __init__(self, base_dir, train_or_test, config):
         self.base_dir = base_dir
         self.config = config
@@ -52,7 +55,7 @@ class Tabletop_Object_Dataset(Dataset):
             self.scene_dirs = self.scene_dirs[100:]
 
         self.len = len(self.scene_dirs) * NUM_VIEWS_PER_SCENE
-
+        self.load_obj_models()
         self.name = 'GraspNet'
 
     def __len__(self):
@@ -95,6 +98,15 @@ class Tabletop_Object_Dataset(Dataset):
 
         return xyz_img
 
+    def load_obj_models(self):
+        self.obj_list = list(range(88))
+        self.obj_models = []
+        for obj_id in tqdm(self.obj_list):
+            model_path = self.base_dir + 'models/' + str(obj_id).zfill(3) + '/nontextured_simplified.ply'
+            model_pc = o3d.io.read_point_cloud(model_path)
+            model_pc = model_pc.voxel_down_sample(voxel_size=0.002)
+            self.obj_models.append(np.asarray(model_pc.points))
+
     def process_label_3D(self, foreground_labels, xyz_img, scene_description):
         """ Process foreground_labels
 
@@ -115,10 +127,26 @@ class Tabletop_Object_Dataset(Dataset):
         offsets = np.zeros((H, W, 3), dtype=np.float32)
         cf_3D_centers = np.zeros((100, 3), dtype=np.float32) # 100 max object centers
 
+        # scene = o3d.geometry.PointCloud()
+        # scene.points = o3d.utility.Vector3dVector(xyz_img.reshape((-1, 3)))
+        # scene.paint_uniform_color([0, 1, 0])
+        # inst_pc_list = []
+
+        obj_list = scene_description['obj_list']
+        pose_list = scene_description['pose_list']
+        camera_pose = scene_description['camera_pose']
+
         for i, k in enumerate(np.unique(foreground_labels)):
 
             # Get mask
             mask = foreground_labels == k
+
+            inst_scene_pc_array = xyz_img[mask, :]
+            inst_scene_pc = o3d.geometry.PointCloud()
+            inst_scene_pc.points = o3d.utility.Vector3dVector(inst_scene_pc_array.reshape((-1, 3)))
+
+            if len(inst_scene_pc_array) <= num_points:
+                continue
 
             # For background/table, prediction direction should point towards origin
             if k in [BACKGROUND_LABEL, TABLE_LABEL]:
@@ -126,30 +154,24 @@ class Tabletop_Object_Dataset(Dataset):
                 continue
 
             # Compute 3D object centers in camera frame
-            pose = np.array(scene_description[k])
-            R, T = pose[:, 0:3], pose[:, 3:]
-            #print(R, T)
-            model_filename = self.base_dir + 'models/' + str(k-1).zfill(3) + '/nontextured_simplified.ply'
-            pc = o3d.io.read_point_cloud(model_filename)
-            pc_world = pc.voxel_down_sample(voxel_size=0.002)
-            #print(np.asarray(pc_world.points).shape)
-            pc_world = np.asarray(pc_world.points)
-            pc_camera = (np.dot(R, pc_world.T) + T)
-            S = np.asarray([
-                [1, 0, 0],
-                [0, -1, 0],
-                [0, 0, 1]
-            ])
-            pc_camera = np.dot(S, pc_camera).T
-            #print(pc_camera.shape)
-            #np.savetxt('./{}.txt'.format(k), pc_camera)
-            
-            cf_3D_center = np.mean(pc_camera, axis=0)
+            inst_pose_idx = np.where(obj_list == k-1)[0][0]
+            obj_pose = pose_list[inst_pose_idx]
+
+            sampled_points = self.obj_models[k-1]
+            target_points = transform_points(sampled_points, obj_pose)
+            target_points = transform_points(target_points, np.linalg.inv(camera_pose))
+
+            # inst = o3d.geometry.PointCloud()
+            # inst.points = o3d.utility.Vector3dVector(target_points)
+            # inst.paint_uniform_color([1, 0, 0])
+            # inst_pc_list.append(inst)
+            cf_3D_center = np.mean(target_points, axis=0)
             #print(cf_3D_center)
             #print(xyz_img[mask, 0].min(), xyz_img[mask, 0].max())
             #print(xyz_img[mask, 1].min(), xyz_img[mask, 1].max())
 
             # If center isn't contained within the object, use point cloud average
+            # TODO
             if cf_3D_center[0] < xyz_img[mask, 0].min() or \
                cf_3D_center[0] > xyz_img[mask, 0].max() or \
                cf_3D_center[1] < xyz_img[mask, 1].min() or \
@@ -162,6 +184,7 @@ class Tabletop_Object_Dataset(Dataset):
 
             # Add it to the labels
             offsets[mask, ...] = object_center_offsets[mask, ...]
+        # o3d.visualization.draw_geometries([scene]+inst_pc_list)
 
         return offsets, cf_3D_centers
 
@@ -187,23 +210,31 @@ class Tabletop_Object_Dataset(Dataset):
         meta_info = scio.loadmat(meta_filename)
         fx, cx = meta_info['intrinsic_matrix'][0][0], meta_info['intrinsic_matrix'][0][2]
         fy, cy = meta_info['intrinsic_matrix'][1][1], meta_info['intrinsic_matrix'][1][2]
+        factor_depth = meta_info['factor_depth']
+
         self.config.update({'fx': fx})
         self.config.update({'x_offset': cx})
         self.config.update({'fy': fy})
         self.config.update({'y_offset': cy})
 
+        camera_poses = np.load(os.path.join(scene_dir, 'realsense', 'camera_poses.npy'))
+        camera_pose = camera_poses[view_num]
+        scene_reader = xmlReader(os.path.join(scene_dir, 'realsense', 'annotations', '%04d.xml' % view_num))
+        pose_vectors = scene_reader.getposevectorlist()
+        obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
+
         scene_description = {}
-        for i in range(len(meta_info['cls_indexes'][0])):
-            idx = meta_info['cls_indexes'][0][i] # obj model idx 
-            pose = meta_info['poses'][:, :, i] # 3*4
-            scene_description.update({
-                idx: pose
-            })
-        
+        scene_description.update({'obj_list': obj_list})
+        scene_description.update({'pose_list': pose_list})
+        scene_description.update({'camera_pose': camera_pose})
+
         # Depth image
         depth_img_filename = scene_dir + "realsense/depth/" + str(view_num).zfill(4) + ".png"
         depth_img = cv2.imread(depth_img_filename, cv2.IMREAD_ANYDEPTH) # This reads a 16-bit single-channel image. Shape: [H x W]
-        xyz_img = self.process_depth(depth_img)
+        # xyz_img = self.process_depth(depth_img)
+
+        camera = CameraInfo(1280.0, 720.0, fx, fy, cx, cy, factor_depth)
+        xyz_img = create_point_cloud_from_depth_image(depth_img, camera, organized=True)
         #np.savetxt('./xyz_img.txt', xyz_img.reshape(-1, 3))
 
         # Labels
@@ -262,8 +293,6 @@ def get_TOD_test_dataloader(base_dir, config, batch_size=8, num_workers=4, shuff
 class RGB_Objects_Dataset(Dataset):
     """ Data loader for Tabletop Object Dataset
     """
-
-
     def __init__(self, base_dir, start_list_file, train_or_test, config):
         self.base_dir = base_dir
         self.config = config
