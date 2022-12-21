@@ -44,13 +44,14 @@ class Tabletop_Object_Dataset(Dataset):
     def __init__(self, base_dir, train_or_test, config):
         self.base_dir = base_dir
         self.config = config
+        self.camera = self.config['camera']
         self.train_or_test = train_or_test
 
         # Get a list of all scenes
         self.scene_dirs = sorted(glob.glob(self.base_dir + 'scenes/scene*/'))
 
         if self.train_or_test == 'train':
-            self.scene_dirs = self.scene_dirs[:100]
+            self.scene_dirs = self.scene_dirs[:1]
         else:
             self.scene_dirs = self.scene_dirs[100:]
 
@@ -200,13 +201,13 @@ class Tabletop_Object_Dataset(Dataset):
         view_num = idx % NUM_VIEWS_PER_SCENE
 
         # RGB image
-        rgb_img_filename = scene_dir + "realsense/rgb/" + str(view_num).zfill(4) + ".png"
+        rgb_img_filename = os.path.join(scene_dir, self.camera, 'rgb', str(view_num).zfill(4) + ".png")
         rgb_img = cv2.cvtColor(cv2.imread(rgb_img_filename), cv2.COLOR_BGR2RGB)
         rgb_img = self.process_rgb(rgb_img)
         #cv2.imwrite('./rgb.png', rgb_img)
 
         # meta info
-        meta_filename = scene_dir + "realsense/meta/" + str(view_num).zfill(4) + ".mat"
+        meta_filename = os.path.join(scene_dir, self.camera, 'meta', str(view_num).zfill(4) + ".mat")
         meta_info = scio.loadmat(meta_filename)
         fx, cx = meta_info['intrinsic_matrix'][0][0], meta_info['intrinsic_matrix'][0][2]
         fy, cy = meta_info['intrinsic_matrix'][1][1], meta_info['intrinsic_matrix'][1][2]
@@ -217,9 +218,9 @@ class Tabletop_Object_Dataset(Dataset):
         self.config.update({'fy': fy})
         self.config.update({'y_offset': cy})
 
-        camera_poses = np.load(os.path.join(scene_dir, 'realsense', 'camera_poses.npy'))
+        camera_poses = np.load(os.path.join(scene_dir, self.camera, 'camera_poses.npy'))
         camera_pose = camera_poses[view_num]
-        scene_reader = xmlReader(os.path.join(scene_dir, 'realsense', 'annotations', '%04d.xml' % view_num))
+        scene_reader = xmlReader(os.path.join(scene_dir, self.camera, 'annotations', '%04d.xml' % view_num))
         pose_vectors = scene_reader.getposevectorlist()
         obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
 
@@ -229,21 +230,20 @@ class Tabletop_Object_Dataset(Dataset):
         scene_description.update({'camera_pose': camera_pose})
 
         # Depth image
-        depth_img_filename = scene_dir + "realsense/depth/" + str(view_num).zfill(4) + ".png"
+        depth_img_filename = os.path.join(scene_dir, self.camera, 'depth', str(view_num).zfill(4) + ".png")
         depth_img = cv2.imread(depth_img_filename, cv2.IMREAD_ANYDEPTH) # This reads a 16-bit single-channel image. Shape: [H x W]
         # xyz_img = self.process_depth(depth_img)
 
-        camera = CameraInfo(1280.0, 720.0, fx, fy, cx, cy, factor_depth)
-        xyz_img = create_point_cloud_from_depth_image(depth_img, camera, organized=True)
-        #np.savetxt('./xyz_img.txt', xyz_img.reshape(-1, 3))
+        camera_info = CameraInfo(1280.0, 720.0, fx, fy, cx, cy, factor_depth)
+        xyz_img = create_point_cloud_from_depth_image(depth_img, camera_info, organized=True)
 
         # Labels
-        foreground_labels_filename = scene_dir + "realsense/label/" + str(view_num).zfill(4) + ".png"
+        foreground_labels_filename = os.path.join(scene_dir, self.camera, 'label', str(view_num).zfill(4) + ".png")
         foreground_labels = util_.imread_indexed(foreground_labels_filename)
         
         # Biqi: center calculation is very slow!!!!!
         center_offset_labels, object_centers = self.process_label_3D(foreground_labels, xyz_img, scene_description)
-        label_abs_path = '/'.join(foreground_labels_filename.split('/')[-2:]) # Used for evaluation
+        label_abs_path = '/'.join(foreground_labels_filename.split('/')[-2:])  # Used for evaluation
 
         # Turn these all into torch tensors
         rgb_img = data_augmentation.array_to_tensor(rgb_img) # Shape: [3 x H x W]
