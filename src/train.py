@@ -202,7 +202,7 @@ class DSNTrainer(Trainer):
                 fg_logits, center_offsets = self.model_wrapper.model(batch['xyz'])
 
                 ### Foreground Loss ###
-                fg_masks = foreground_labels.clamp(0,2).long()
+                fg_masks = foreground_labels.clamp(0, 1).long()
                 fg_loss = self.losses['fg_loss'](fg_logits, fg_masks)
 
                 ### Center Prediction Loss ###
@@ -303,6 +303,8 @@ class DSNTrainer(Trainer):
                 self.iter_num += 1
 
             self.epoch_num += 1
+            if self.epoch_num % 3 == 0:
+                self.save()
 
 class RRNTrainer(Trainer):
 

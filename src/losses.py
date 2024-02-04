@@ -88,7 +88,7 @@ class CELossWeightedMasked(WeightedLoss):
             @param fg_mask: a [N x H x W] torch.LongTensor of values in {0, 1, 2, ...}
         """
         temp = self.CrossEntropyLoss(x, target) # Shape: [N x H x W]
-        weight_mask = self.generate_weight_mask(fg_mask, to_ignore=[0,1]) # ignore bg/table
+        weight_mask = self.generate_weight_mask(fg_mask, to_ignore=[0]) # ignore bg/table
         loss = torch.sum(temp * weight_mask) / torch.sum(weight_mask) 
 
         return loss

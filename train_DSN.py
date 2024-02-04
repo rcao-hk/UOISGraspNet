@@ -5,12 +5,29 @@
 
 # In[ ]:
 
-
+# TODO: Change this if you have more than 1 GPU
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "0, 1"
+
+
 from time import time
 
 import numpy as np
 import matplotlib.pyplot as plt
+
+import resource
+# RuntimeError: received 0 items of ancdata. Issue: pytorch/pytorch#973
+rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+hard_limit = rlimit[1]
+soft_limit = min(500000, hard_limit)
+print("soft limit: ", soft_limit, "hard limit: ", hard_limit)
+resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
+
+# import cv2
+# import sys
+
+# cv2.setNumThreads(0)
+# cv2.ocl.setUseOpenCL(False)
 
 # My libraries
 import src.data_loader_graspnet as data_loader
@@ -39,7 +56,8 @@ data_loading_params = {
     'fov': 45,  # vertical field of view in degrees
 
     'camera': 'realsense',
-    'use_data_augmentation': True,
+    'camera': 'realsense',
+    'use_data_augmentation': False,
 
     # Multiplicative noise
     'gamma_shape': 1000.,
@@ -134,42 +152,42 @@ dsn_trainer = train.DSNTrainer(dsn, dsn_training_config)
 # Train the network for 1 epoch
 num_epochs = 12
 dsn_trainer.train(num_epochs, dl)
-dsn_trainer.save()
+# dsn_trainer.save()
 
 # ## Visualize some stuff
-dl = data_loader.get_TOD_test_dataloader(
-    TOD_filepath, data_loading_params, batch_size=8, num_workers=8, shuffle=True)
-dl_iter = dl.__iter__()
+# dl = data_loader.get_TOD_test_dataloader(
+#     TOD_filepath, data_loading_params, batch_size=8, num_workers=8, shuffle=True)
+# dl_iter = dl.__iter__()
 
-batch = next(dl_iter)
-rgb_imgs = util_.torch_to_numpy(
-    batch['rgb'], is_standardized_image=True)  # Shape: [N x H x W x 3]
-xyz_imgs = util_.torch_to_numpy(batch['xyz'])  # Shape: [N x H x W x 3]
-foreground_labels = util_.torch_to_numpy(
-    batch['foreground_labels'])  # Shape: [N x H x W]
-center_offset_labels = util_.torch_to_numpy(
-    batch['center_offset_labels'])  # Shape: [N x 2 x H x W]
-N, H, W = foreground_labels.shape[:3]
+# batch = next(dl_iter)
+# rgb_imgs = util_.torch_to_numpy(
+#     batch['rgb'], is_standardized_image=True)  # Shape: [N x H x W x 3]
+# xyz_imgs = util_.torch_to_numpy(batch['xyz'])  # Shape: [N x H x W x 3]
+# foreground_labels = util_.torch_to_numpy(
+#     batch['foreground_labels'])  # Shape: [N x H x W]
+# center_offset_labels = util_.torch_to_numpy(
+#     batch['center_offset_labels'])  # Shape: [N x 2 x H x W]
+# N, H, W = foreground_labels.shape[:3]
 
-print("Number of images: {0}".format(N))
+# print("Number of images: {0}".format(N))
 
-dsn.eval_mode()
+# dsn.eval_mode()
 
-### Compute segmentation masks ###
-st_time = time()
-fg_masks, center_offsets, object_centers, initial_masks = dsn.run_on_batch(
-    batch)
-total_time = time() - st_time
-print('Total time taken for Segmentation: {0} seconds'.format(
-    round(total_time, 3)))
-print('FPS: {0}'.format(round(N / total_time, 3)))
+# ### Compute segmentation masks ###
+# st_time = time()
+# fg_masks, center_offsets, object_centers, initial_masks = dsn.run_on_batch(
+#     batch)
+# total_time = time() - st_time
+# print('Total time taken for Segmentation: {0} seconds'.format(
+#     round(total_time, 3)))
+# print('FPS: {0}'.format(round(N / total_time, 3)))
 
-# Get segmentation masks in numpy
-fg_masks = fg_masks.cpu().numpy()
-center_offsets = center_offsets.cpu().numpy().transpose(0, 2, 3, 1)
-initial_masks = initial_masks.cpu().numpy()
-for i in range(len(object_centers)):
-    object_centers[i] = object_centers[i].cpu().numpy()
+# # Get segmentation masks in numpy
+# fg_masks = fg_masks.cpu().numpy()
+# center_offsets = center_offsets.cpu().numpy().transpose(0, 2, 3, 1)
+# initial_masks = initial_masks.cpu().numpy()
+# for i in range(len(object_centers)):
+#     object_centers[i] = object_centers[i].cpu().numpy()
 
 # fig_index = 1
 # for i in range(N):

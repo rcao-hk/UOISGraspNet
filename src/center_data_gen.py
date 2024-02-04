@@ -16,8 +16,9 @@ TABLE_LABEL = 0
 OBJECTS_LABEL = 1
 
 num_points = 1024
-camera = 'realsense'
-root = '/media/rcao/Data/Dataset/graspnet/'
+
+camera = 'kinect'
+root = '/data/rcao/dataset/graspnet/'
 save_root = os.path.join(root, 'center_label')
 
 def load_obj_models():
@@ -51,7 +52,7 @@ def process_label_3D(foreground_labels, xyz_img, scene_description, obj_models):
     offsets = np.zeros((H, W, 3), dtype=np.float32)
     cf_3D_centers = np.zeros((100, 3), dtype=np.float32) # 100 max object centers
 
-    inst_pc_list = []
+    # inst_pc_list = []
 
     obj_list = scene_description['obj_list']
     pose_list = scene_description['pose_list']
@@ -100,7 +101,7 @@ def process_label_3D(foreground_labels, xyz_img, scene_description, obj_models):
             cf_3D_center = xyz_img[mask, ...].mean(axis=0)
 
         # Get directions
-        cf_3D_centers[i-2] = cf_3D_center
+        cf_3D_centers[i-1] = cf_3D_center
         object_center_offsets = (cf_3D_center - xyz_img).astype(np.float32) # Shape: [H x W x 3]
 
         # Add it to the labels
@@ -113,7 +114,7 @@ obj_models = load_obj_models()
 
 for scene_idx in range(130):
     scene_dir = os.path.join(root, 'scenes', 'scene_{:04}'.format(scene_idx))
-    for view_num in range(256):
+    for view_num in tqdm(range(256)):
 
         # meta info
         meta_filename = os.path.join(scene_dir, camera, 'meta', str(view_num).zfill(4) + ".mat")
