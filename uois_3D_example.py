@@ -2,10 +2,6 @@
 # coding: utf-8
 
 # # Unseen Object Instance Segmentation
-
-# In[ ]:
-
-
 # get_ipython().run_line_magic('matplotlib', 'inline')
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "0" # TODO: Change this if you have more than 1 GPU
@@ -32,9 +28,6 @@ import scipy.io as scio
 
 # ## Depth Seeding Network Parameters
 
-# In[ ]:
-
-
 dsn_config = {
     
     # Sizes
@@ -56,8 +49,6 @@ dsn_config = {
 
 # ## Region Refinement Network parameters
 
-# In[ ]:
-
 
 rrn_config = {
     
@@ -74,9 +65,6 @@ rrn_config = {
 
 # # UOIS-Net-3D Parameters
 
-# In[ ]:
-
-
 uois3d_config = {
     
     # Padding for RGB Refinement Network
@@ -91,13 +79,11 @@ uois3d_config = {
     
 }
 
-
-# In[ ]:
-
 # Biqi
 checkpoint_dir = './checkpoints/' # TODO: change this to directory of downloaded models
 # Biqi
-dsn_filename = checkpoint_dir + 'DSN_3D_TOD_checkpoint.pth'
+dsn_filename = checkpoint_dir + 'DSNWrapper_iter76801_64c_checkpoint.pth'
+# dsn_filename = checkpoint_dir + 'DSNWrapper_iter150000_64c_checkpoint.pth'
 rrn_filename = checkpoint_dir + 'RRN_OID_checkpoint.pth'
 uois3d_config['final_close_morphology'] = True
 uois_net_3d = segmentation.UOISNet3D(uois3d_config, 
@@ -168,9 +154,6 @@ batch = {
 }
 
 
-# In[ ]:
-
-
 print("Number of images: {0}".format(N))
 
 ### Compute segmentation masks ###
@@ -185,10 +168,6 @@ seg_masks = seg_masks.cpu().numpy()
 fg_masks = fg_masks.cpu().numpy()
 center_offsets = center_offsets.cpu().numpy().transpose(0,2,3,1)
 initial_masks = initial_masks.cpu().numpy()
-
-
-# In[ ]:
-
 
 rgb_imgs = util_.torch_to_numpy(batch['rgb'].cpu(), is_standardized_image=True)
 total_subplots = 6
@@ -215,10 +194,4 @@ for i in range(N):
     eval_metrics = evaluation.multilabel_metrics(initial_masks[i,...], label_imgs[i])
     print(f"Image {i+1} Metrics:")
     print(eval_metrics)
-
-
-# In[ ]:
-
-
-
 

@@ -499,15 +499,15 @@ class UOISNet3D(object):
         N, _, H, W = batch['rgb'].shape
 
         # DSN. Note: this will send "batch" to device (e.g. GPU)
-        fg_masks, center_offsets, object_centers, initial_masks = self.dsn.run_on_batch(batch)
+        fg_masks, center_offsets, object_centers, dsn_masks = self.dsn.run_on_batch(batch)
 
         # IMP
-        initial_masks = self.process_initial_masks(batch, initial_masks, object_centers)
+        initial_masks = self.process_initial_masks(batch, dsn_masks, object_centers)
 
         # RRN
         refined_masks = self.refine_with_RRN(batch, initial_masks)
 
-        return fg_masks, center_offsets, initial_masks, refined_masks
+        return fg_masks, center_offsets, object_centers, dsn_masks, initial_masks, refined_masks
 
 
     def refine_with_RRN(self, batch, initial_masks):

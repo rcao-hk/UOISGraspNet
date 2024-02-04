@@ -1,0 +1,23 @@
+dsn:
+  M_threshold: 0.3
+  angle_discretization: 100
+  discretization_threshold: 0.0
+  epsilon: 0.05
+  feature_dim: 64
+  max_GMS_iters: 10
+  min_pixels_thresh: 500
+  num_seeds: 200
+  sigma: 0.02
+  subsample_factor: 5
+  tau: 15.0
+rrn:
+  feature_dim: 64
+  img_H: 224
+  img_W: 224
+  use_coordconv: false
+uois3d:
+  final_close_morphology: false
+  open_close_morphology_ksize: 5
+  padding_percentage: 0.25
+  use_largest_connected_component: true
+  use_open_close_morphology: true

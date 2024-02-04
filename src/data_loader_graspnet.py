@@ -1,18 +1,15 @@
 import os
-import open3d as o3d
+# import open3d as o3d
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import glob
-import cv2
-import json
-# import pybullet as p
+# import cv2
+from PIL import Image
 import scipy.io as scio
 
-import sys
-sys.path.append('./src')
-from util import utilities as util_
-import data_augmentation
+from .util import utilities as util_
+from . import data_augmentation
 
 from tqdm import tqdm
 from graspnetAPI.utils.utils import get_obj_pose_list, transform_points
@@ -51,7 +48,7 @@ class Tabletop_Object_Dataset(Dataset):
         self.scene_dirs = sorted(glob.glob(self.base_dir + 'scenes/scene*/'))
 
         if self.train_or_test == 'train':
-            self.scene_dirs = self.scene_dirs[:1]
+            self.scene_dirs = self.scene_dirs[:100]
         else:
             self.scene_dirs = self.scene_dirs[100:]
 
@@ -103,10 +100,9 @@ class Tabletop_Object_Dataset(Dataset):
         self.obj_list = list(range(88))
         self.obj_models = []
         for obj_id in tqdm(self.obj_list):
-            model_path = self.base_dir + 'models/' + str(obj_id).zfill(3) + '/nontextured_simplified.ply'
-            model_pc = o3d.io.read_point_cloud(model_path)
-            model_pc = model_pc.voxel_down_sample(voxel_size=0.002)
-            self.obj_models.append(np.asarray(model_pc.points))
+            model_path = os.path.join(self.base_dir, 'sim_models', str(obj_id).zfill(3)+'.npz')
+            model_pc_array = np.load(model_path)['arr_0']
+            self.obj_models.append(model_pc_array)
 
     def process_label_3D(self, foreground_labels, xyz_img, scene_description):
         """ Process foreground_labels
@@ -143,8 +139,8 @@ class Tabletop_Object_Dataset(Dataset):
             mask = foreground_labels == k
 
             inst_scene_pc_array = xyz_img[mask, :]
-            inst_scene_pc = o3d.geometry.PointCloud()
-            inst_scene_pc.points = o3d.utility.Vector3dVector(inst_scene_pc_array.reshape((-1, 3)))
+            # inst_scene_pc = o3d.geometry.PointCloud()
+            # inst_scene_pc.points = o3d.utility.Vector3dVector(inst_scene_pc_array.reshape((-1, 3)))
 
             if len(inst_scene_pc_array) <= num_points:
                 continue
@@ -191,7 +187,7 @@ class Tabletop_Object_Dataset(Dataset):
 
     def __getitem__(self, idx):
 
-        cv2.setNumThreads(0) # some hack to make sure pyTorch doesn't deadlock. Found at https://github.com/pytorch/pytorch/issues/1355. Seems to work for me
+        # cv2.setNumThreads(0) # some hack to make sure pyTorch doesn't deadlock. Found at https://github.com/pytorch/pytorch/issues/1355. Seems to work for me
 
         # Get scene directory
         scene_idx = idx // NUM_VIEWS_PER_SCENE
@@ -202,7 +198,8 @@ class Tabletop_Object_Dataset(Dataset):
 
         # RGB image
         rgb_img_filename = os.path.join(scene_dir, self.camera, 'rgb', str(view_num).zfill(4) + ".png")
-        rgb_img = cv2.cvtColor(cv2.imread(rgb_img_filename), cv2.COLOR_BGR2RGB)
+        # rgb_img = cv2.cvtColor(cv2.imread(rgb_img_filename), cv2.COLOR_BGR2RGB)
+        rgb_img = np.array(Image.open(rgb_img_filename), dtype=np.float32)
         rgb_img = self.process_rgb(rgb_img)
         #cv2.imwrite('./rgb.png', rgb_img)
 
@@ -218,21 +215,21 @@ class Tabletop_Object_Dataset(Dataset):
         self.config.update({'fy': fy})
         self.config.update({'y_offset': cy})
 
-        camera_poses = np.load(os.path.join(scene_dir, self.camera, 'camera_poses.npy'))
-        camera_pose = camera_poses[view_num]
-        scene_reader = xmlReader(os.path.join(scene_dir, self.camera, 'annotations', '%04d.xml' % view_num))
-        pose_vectors = scene_reader.getposevectorlist()
-        obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
+        # camera_poses = np.load(os.path.join(scene_dir, self.camera, 'camera_poses.npy'))
+        # camera_pose = camera_poses[view_num]
+        # scene_reader = xmlReader(os.path.join(scene_dir, self.camera, 'annotations', '%04d.xml' % view_num))
+        # pose_vectors = scene_reader.getposevectorlist()
+        # obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
 
-        scene_description = {}
-        scene_description.update({'obj_list': obj_list})
-        scene_description.update({'pose_list': pose_list})
-        scene_description.update({'camera_pose': camera_pose})
+        # scene_description = {}
+        # scene_description.update({'obj_list': obj_list})
+        # scene_description.update({'pose_list': pose_list})
+        # scene_description.update({'camera_pose': camera_pose})
 
         # Depth image
         depth_img_filename = os.path.join(scene_dir, self.camera, 'depth', str(view_num).zfill(4) + ".png")
-        depth_img = cv2.imread(depth_img_filename, cv2.IMREAD_ANYDEPTH) # This reads a 16-bit single-channel image. Shape: [H x W]
-        # xyz_img = self.process_depth(depth_img)
+        # depth_img = cv2.imread(depth_img_filename, cv2.IMREAD_ANYDEPTH) # This reads a 16-bit single-channel image. Shape: [H x W]
+        depth_img = np.array(Image.open(depth_img_filename))
 
         camera_info = CameraInfo(1280.0, 720.0, fx, fy, cx, cy, factor_depth)
         xyz_img = create_point_cloud_from_depth_image(depth_img, camera_info, organized=True)
@@ -240,9 +237,14 @@ class Tabletop_Object_Dataset(Dataset):
         # Labels
         foreground_labels_filename = os.path.join(scene_dir, self.camera, 'label', str(view_num).zfill(4) + ".png")
         foreground_labels = util_.imread_indexed(foreground_labels_filename)
-        
+
         # Biqi: center calculation is very slow!!!!!
-        center_offset_labels, object_centers = self.process_label_3D(foreground_labels, xyz_img, scene_description)
+        # center_offset_labels, object_centers = self.process_label_3D(foreground_labels, xyz_img, scene_description)
+        obj_center_filename = os.path.join(self.base_dir, 'center_label', 'scene_{:04}'.format(scene_idx),
+                                           self.camera, '{:04}.npz'.format(view_num))
+        obj_center_dict = np.load(obj_center_filename)
+        center_offset_labels = obj_center_dict['offsets']
+        object_centers = obj_center_dict['centers']
         label_abs_path = '/'.join(foreground_labels_filename.split('/')[-2:])  # Used for evaluation
 
         # Turn these all into torch tensors
@@ -290,239 +292,239 @@ def get_TOD_test_dataloader(base_dir, config, batch_size=8, num_workers=4, shuff
 
 ############# RGB Images Dataset (Google Open Images) #############
 
-class RGB_Objects_Dataset(Dataset):
-    """ Data loader for Tabletop Object Dataset
-    """
-    def __init__(self, base_dir, start_list_file, train_or_test, config):
-        self.base_dir = base_dir
-        self.config = config
-        self.train_or_test = train_or_test
+# class RGB_Objects_Dataset(Dataset):
+#     """ Data loader for Tabletop Object Dataset
+#     """
+#     def __init__(self, base_dir, start_list_file, train_or_test, config):
+#         self.base_dir = base_dir
+#         self.config = config
+#         self.train_or_test = train_or_test
 
-        # Get a list of all instance labels
-        f = open(base_dir + start_list_file)
-        lines = [x.strip() for x in f.readlines()]
-        self.starts = lines
-        self.len = len(self.starts)
+#         # Get a list of all instance labels
+#         f = open(base_dir + start_list_file)
+#         lines = [x.strip() for x in f.readlines()]
+#         self.starts = lines
+#         self.len = len(self.starts)
 
-        self.name = 'RGB_Objects'
+#         self.name = 'RGB_Objects'
 
-    def __len__(self):
-        return self.len
+#     def __len__(self):
+#         return self.len
 
-    def pad_crop_resize(self, img, morphed_label, label):
-        """ Crop the image around the label mask, then resize to 224x224
-        """
+#     def pad_crop_resize(self, img, morphed_label, label):
+#         """ Crop the image around the label mask, then resize to 224x224
+#         """
 
-        H, W, _ = img.shape
+#         H, W, _ = img.shape
 
-        # Get tight box around label/morphed label
-        x_min, y_min, x_max, y_max = util_.mask_to_tight_box(label)
-        _xmin, _ymin, _xmax, _ymax = util_.mask_to_tight_box(morphed_label)
-        x_min = min(x_min, _xmin); y_min = min(y_min, _ymin); x_max = max(x_max, _xmax); y_max = max(y_max, _ymax)
+#         # Get tight box around label/morphed label
+#         x_min, y_min, x_max, y_max = util_.mask_to_tight_box(label)
+#         _xmin, _ymin, _xmax, _ymax = util_.mask_to_tight_box(morphed_label)
+#         x_min = min(x_min, _xmin); y_min = min(y_min, _ymin); x_max = max(x_max, _xmax); y_max = max(y_max, _ymax)
 
-        # Make bbox square
-        x_delta = x_max - x_min
-        y_delta = y_max - y_min
-        if x_delta > y_delta:
-            y_max = y_min + x_delta
-        else:
-            x_max = x_min + y_delta
+#         # Make bbox square
+#         x_delta = x_max - x_min
+#         y_delta = y_max - y_min
+#         if x_delta > y_delta:
+#             y_max = y_min + x_delta
+#         else:
+#             x_max = x_min + y_delta
 
-        sidelength = x_max - x_min
-        padding_percentage = np.random.beta(self.config['padding_alpha'], self.config['padding_beta'])
-        padding_percentage = max(padding_percentage, self.config['min_padding_percentage'])
-        padding = int(round(sidelength * padding_percentage))
-        if padding == 0:
-            print('Whoa, padding is 0... sidelength: {sidelength}, %: {padding_percentage}')
-            padding = 25 # just make it 25 pixels
+#         sidelength = x_max - x_min
+#         padding_percentage = np.random.beta(self.config['padding_alpha'], self.config['padding_beta'])
+#         padding_percentage = max(padding_percentage, self.config['min_padding_percentage'])
+#         padding = int(round(sidelength * padding_percentage))
+#         if padding == 0:
+#             print('Whoa, padding is 0... sidelength: {sidelength}, %: {padding_percentage}')
+#             padding = 25 # just make it 25 pixels
 
-        # Pad and be careful of boundaries
-        x_min = max(x_min - padding, 0)
-        x_max = min(x_max + padding, W-1)
-        y_min = max(y_min - padding, 0)
-        y_max = min(y_max + padding, H-1)
+#         # Pad and be careful of boundaries
+#         x_min = max(x_min - padding, 0)
+#         x_max = min(x_max + padding, W-1)
+#         y_min = max(y_min - padding, 0)
+#         y_max = min(y_max + padding, H-1)
 
-        # Crop
-        if (y_min == y_max) or (x_min == x_max):
-            print('Fuck... something is wrong:', x_min, y_min, x_max, y_max)
-            print(morphed_label)
-            print(label)
-        img_crop = img[y_min:y_max+1, x_min:x_max+1]
-        morphed_label_crop = morphed_label[y_min:y_max+1, x_min:x_max+1]
-        label_crop = label[y_min:y_max+1, x_min:x_max+1]
+#         # Crop
+#         if (y_min == y_max) or (x_min == x_max):
+#             print('Fuck... something is wrong:', x_min, y_min, x_max, y_max)
+#             print(morphed_label)
+#             print(label)
+#         img_crop = img[y_min:y_max+1, x_min:x_max+1]
+#         morphed_label_crop = morphed_label[y_min:y_max+1, x_min:x_max+1]
+#         label_crop = label[y_min:y_max+1, x_min:x_max+1]
 
-        # Resize
-        img_crop = cv2.resize(img_crop, (224,224))
-        morphed_label_crop = cv2.resize(morphed_label_crop, (224,224))
-        label_crop = cv2.resize(label_crop, (224,224))
+#         # Resize
+#         img_crop = cv2.resize(img_crop, (224,224))
+#         morphed_label_crop = cv2.resize(morphed_label_crop, (224,224))
+#         label_crop = cv2.resize(label_crop, (224,224))
 
-        return img_crop, morphed_label_crop, label_crop
+#         return img_crop, morphed_label_crop, label_crop
 
-    def transform(self, img, label):
-        """ Process RGB image
-                - standardize_image
-                - random color warping
-                - random horizontal flipping
-        """
+#     def transform(self, img, label):
+#         """ Process RGB image
+#                 - standardize_image
+#                 - random color warping
+#                 - random horizontal flipping
+#         """
 
-        img = img.astype(np.float32)
+#         img = img.astype(np.float32)
 
-        # Data augmentation for mask
-        morphed_label = label.copy()
-        if self.config['use_data_augmentation']:
-            if np.random.rand() < self.config['rate_of_morphological_transform']:
-                morphed_label = data_augmentation.random_morphological_transform(morphed_label, self.config)
-            if np.random.rand() < self.config['rate_of_translation']:
-                morphed_label = data_augmentation.random_translation(morphed_label, self.config)
-            if np.random.rand() < self.config['rate_of_rotation']:
-                morphed_label = data_augmentation.random_rotation(morphed_label, self.config)
+#         # Data augmentation for mask
+#         morphed_label = label.copy()
+#         if self.config['use_data_augmentation']:
+#             if np.random.rand() < self.config['rate_of_morphological_transform']:
+#                 morphed_label = data_augmentation.random_morphological_transform(morphed_label, self.config)
+#             if np.random.rand() < self.config['rate_of_translation']:
+#                 morphed_label = data_augmentation.random_translation(morphed_label, self.config)
+#             if np.random.rand() < self.config['rate_of_rotation']:
+#                 morphed_label = data_augmentation.random_rotation(morphed_label, self.config)
 
-            sample = np.random.rand()
-            if sample < self.config['rate_of_label_adding']:
-                morphed_label = data_augmentation.random_add(morphed_label, self.config)
-            elif sample < self.config['rate_of_label_adding'] + self.config['rate_of_label_cutting']:
-                morphed_label = data_augmentation.random_cut(morphed_label, self.config)
-                
-            if np.random.rand() < self.config['rate_of_ellipses']:
-                morphed_label = data_augmentation.random_ellipses(morphed_label, self.config)
+#             sample = np.random.rand()
+#             if sample < self.config['rate_of_label_adding']:
+#                 morphed_label = data_augmentation.random_add(morphed_label, self.config)
+#             elif sample < self.config['rate_of_label_adding'] + self.config['rate_of_label_cutting']:
+#                 morphed_label = data_augmentation.random_cut(morphed_label, self.config)
 
-        # Next, crop the mask with some padding, and resize to 224x224. Make sure to preserve the aspect ratio
-        img_crop, morphed_label_crop, label_crop = self.pad_crop_resize(img, morphed_label, label)
+#             if np.random.rand() < self.config['rate_of_ellipses']:
+#                 morphed_label = data_augmentation.random_ellipses(morphed_label, self.config)
 
-        # Data augmentation for RGB
-        # if self.config['use_data_augmentation']:
-        #     img_crop = data_augmentation.random_color_warp(img_crop)
-        img_crop = data_augmentation.standardize_image(img_crop)
+#         # Next, crop the mask with some padding, and resize to 224x224. Make sure to preserve the aspect ratio
+#         img_crop, morphed_label_crop, label_crop = self.pad_crop_resize(img, morphed_label, label)
 
-        # Turn into torch tensors
-        img_crop = data_augmentation.array_to_tensor(img_crop) # Shape: [3 x H x W]
-        morphed_label_crop = data_augmentation.array_to_tensor(morphed_label_crop) # Shape: [H x W]
-        label_crop = data_augmentation.array_to_tensor(label_crop) # Shape: [H x W]
+#         # Data augmentation for RGB
+#         # if self.config['use_data_augmentation']:
+#         #     img_crop = data_augmentation.random_color_warp(img_crop)
+#         img_crop = data_augmentation.standardize_image(img_crop)
 
-        return img_crop, morphed_label_crop, label_crop
+#         # Turn into torch tensors
+#         img_crop = data_augmentation.array_to_tensor(img_crop) # Shape: [3 x H x W]
+#         morphed_label_crop = data_augmentation.array_to_tensor(morphed_label_crop) # Shape: [H x W]
+#         label_crop = data_augmentation.array_to_tensor(label_crop) # Shape: [H x W]
 
-    def __getitem__(self, idx):
+#         return img_crop, morphed_label_crop, label_crop
 
-        cv2.setNumThreads(0) # some hack to make sure pyTorch doesn't deadlock. Found at https://github.com/pytorch/pytorch/issues/1355. Seems to work for me
+#     def __getitem__(self, idx):
 
-        # Get label filename
-        label_filename = self.starts[idx]
+#         cv2.setNumThreads(0) # some hack to make sure pyTorch doesn't deadlock. Found at https://github.com/pytorch/pytorch/issues/1355. Seems to work for me
 
-        label = cv2.imread(str(os.path.join(self.base_dir, 'Labels', label_filename))) # Shape: [H x W x 3]
-        label = label[..., 0] == 255 # Turn it into a {0,1} binary mask with shape: [H x W]
-        label = label.astype(np.uint8)
+#         # Get label filename
+#         label_filename = self.starts[idx]
 
-        # find corresponding image file
-        img_file = label_filename.split('_')[0] + '.jpg'
-        img = cv2.imread(str(os.path.join(self.base_dir, 'Images', img_file)))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#         label = cv2.imread(str(os.path.join(self.base_dir, 'Labels', label_filename))) # Shape: [H x W x 3]
+#         label = label[..., 0] == 255 # Turn it into a {0,1} binary mask with shape: [H x W]
+#         label = label.astype(np.uint8)
 
-        # These might not be the same size. resize them to the smaller one
-        if label.shape[0] < img.shape[0]:
-            new_size = label.shape[::-1] # (W, H)
-        else:
-            new_size = img.shape[:2][::-1]
-        label = cv2.resize(label, new_size)
-        img = cv2.resize(img, new_size)
+#         # find corresponding image file
+#         img_file = label_filename.split('_')[0] + '.jpg'
+#         img = cv2.imread(str(os.path.join(self.base_dir, 'Images', img_file)))
+#         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        img_crop, morphed_label_crop, label_crop = self.transform(img, label)
+#         # These might not be the same size. resize them to the smaller one
+#         if label.shape[0] < img.shape[0]:
+#             new_size = label.shape[::-1] # (W, H)
+#         else:
+#             new_size = img.shape[:2][::-1]
+#         label = cv2.resize(label, new_size)
+#         img = cv2.resize(img, new_size)
 
-        return {
-            'rgb' : img_crop,
-            'initial_masks' : morphed_label_crop,
-            'labels' : label_crop
-        }
+#         img_crop, morphed_label_crop, label_crop = self.transform(img, label)
 
-def get_RGBO_train_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=True):
+#         return {
+#             'rgb' : img_crop,
+#             'initial_masks' : morphed_label_crop,
+#             'labels' : label_crop
+#         }
 
-    dataset = RGB_Objects_Dataset(base_dir, config['starts_file'], 'train', config)
+# def get_RGBO_train_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=True):
 
-    return DataLoader(dataset=dataset,
-                      batch_size=batch_size,
-                      shuffle=shuffle,
-                      num_workers=num_workers,
-                      worker_init_fn=worker_init_fn)
+#     dataset = RGB_Objects_Dataset(base_dir, config['starts_file'], 'train', config)
+
+    # return DataLoader(dataset=dataset,
+    #                   batch_size=batch_size,
+    #                   shuffle=shuffle,
+    #                   num_workers=num_workers,
+    #                   worker_init_fn=worker_init_fn)
 
 
-# Synthetic RGB dataset for training RGB Refinement Network
-class Synthetic_RGB_Objects_Dataset(RGB_Objects_Dataset):
-    """ Data loader for Tabletop Object Dataset
-    """
+# # Synthetic RGB dataset for training RGB Refinement Network
+# class Synthetic_RGB_Objects_Dataset(RGB_Objects_Dataset):
+#     """ Data loader for Tabletop Object Dataset
+#     """
 
-    def __init__(self, base_dir, train_or_test, config):
-        self.base_dir = base_dir
-        self.config = config
-        self.train_or_test = train_or_test
+#     def __init__(self, base_dir, train_or_test, config):
+#         self.base_dir = base_dir
+#         self.config = config
+#         self.train_or_test = train_or_test
 
-        # Get a list of all scenes
-        self.scene_dirs = sorted(glob.glob(self.base_dir + '*/'))
-        self.len = len(self.scene_dirs) * 5 # only 5 images with objects in them
+#         # Get a list of all scenes
+#         self.scene_dirs = sorted(glob.glob(self.base_dir + '*/'))
+#         self.len = len(self.scene_dirs) * 5 # only 5 images with objects in them
 
-        self.name = 'Synth_RGB_Objects'
+#         self.name = 'Synth_RGB_Objects'
 
-    def __getitem__(self, idx):
+#     def __getitem__(self, idx):
 
-        cv2.setNumThreads(0) # some hack to make sure pyTorch doesn't deadlock. Found at https://github.com/pytorch/pytorch/issues/1355. Seems to work for me
+#         cv2.setNumThreads(0) # some hack to make sure pyTorch doesn't deadlock. Found at https://github.com/pytorch/pytorch/issues/1355. Seems to work for me
 
-        # Get scene directory
-        scene_idx = idx // 5
-        scene_dir = self.scene_dirs[scene_idx]
+#         # Get scene directory
+#         scene_idx = idx // 5
+#         scene_dir = self.scene_dirs[scene_idx]
 
-        # Get view number
-        view_num = idx % 5 + 2 # objects start at rgb_00002.jpg
+#         # Get view number
+#         view_num = idx % 5 + 2 # objects start at rgb_00002.jpg
 
-        # Label
-        foreground_labels_filename = scene_dir + "segmentation_{view_num:05d}.png"
-        label_abs_path = '/'.join(foreground_labels_filename.split('/')[-2:]) # Used for evaluation
-        foreground_labels = util_.imread_indexed(foreground_labels_filename)
+#         # Label
+#         foreground_labels_filename = scene_dir + "segmentation_{view_num:05d}.png"
+#         label_abs_path = '/'.join(foreground_labels_filename.split('/')[-2:]) # Used for evaluation
+#         foreground_labels = util_.imread_indexed(foreground_labels_filename)
 
-        # Grab a random object and use that mask
-        obj_ids = np.unique(foreground_labels)
-        if obj_ids[0] == 0:
-            obj_ids = obj_ids[1:] # get rid of background
-        if obj_ids[0] == 1:
-            obj_ids = obj_ids[1:] # get rid of table
+#         # Grab a random object and use that mask
+#         obj_ids = np.unique(foreground_labels)
+#         if obj_ids[0] == 0:
+#             obj_ids = obj_ids[1:] # get rid of background
+#         if obj_ids[0] == 1:
+#             obj_ids = obj_ids[1:] # get rid of table
 
-        num_pixels = 1; num_pixel_tries = 0
-        while num_pixels < 2:
+#         num_pixels = 1; num_pixel_tries = 0
+#         while num_pixels < 2:
 
-            if num_pixel_tries > 100:
-                print("ERROR. Pixels too small. Choosing a new image.")
-                print(scene_dir, view_num, num_pixels, obj_ids, np.unique(foreground_labels))
+#             if num_pixel_tries > 100:
+#                 print("ERROR. Pixels too small. Choosing a new image.")
+#                 print(scene_dir, view_num, num_pixels, obj_ids, np.unique(foreground_labels))
 
-                # Choose a new image to use instead
-                new_idx = np.random.randint(0, self.len)
-                return self.__getitem__(new_idx)
+#                 # Choose a new image to use instead
+#                 new_idx = np.random.randint(0, self.len)
+#                 return self.__getitem__(new_idx)
 
-            obj_id = np.random.choice(obj_ids)
-            label = (foreground_labels == obj_id).astype(np.uint8)
-            num_pixels = np.count_nonzero(label)
+#             obj_id = np.random.choice(obj_ids)
+#             label = (foreground_labels == obj_id).astype(np.uint8)
+#             num_pixels = np.count_nonzero(label)
 
-            num_pixel_tries += 1
+#             num_pixel_tries += 1
 
-        # RGB image
-        img_filename = scene_dir + "rgb_{view_num:05d}.jpeg"
-        img = cv2.cvtColor(cv2.imread(img_filename), cv2.COLOR_BGR2RGB)
+#         # RGB image
+#         img_filename = scene_dir + "rgb_{view_num:05d}.jpeg"
+#         img = cv2.cvtColor(cv2.imread(img_filename), cv2.COLOR_BGR2RGB)
 
-        # Processing
-        img_crop, morphed_label_crop, label_crop = self.transform(img, label)
+#         # Processing
+#         img_crop, morphed_label_crop, label_crop = self.transform(img, label)
 
-        return {
-            'rgb' : img_crop,
-            'initial_masks' : morphed_label_crop,
-            'labels' : label_crop,
-            'label_abs_path' : label_abs_path,
-        }
+#         return {
+#             'rgb' : img_crop,
+#             'initial_masks' : morphed_label_crop,
+#             'labels' : label_crop,
+#             'label_abs_path' : label_abs_path,
+#         }
 
-def get_Synth_RGBO_train_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=True):
+# def get_Synth_RGBO_train_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=True):
 
-    dataset = Synthetic_RGB_Objects_Dataset(base_dir + 'training_set/','train', config)
+#     dataset = Synthetic_RGB_Objects_Dataset(base_dir + 'training_set/','train', config)
 
-    return DataLoader(dataset=dataset,
-                      batch_size=batch_size,
-                      shuffle=shuffle,
-                      num_workers=num_workers,
-                      worker_init_fn=worker_init_fn)
+#     return DataLoader(dataset=dataset,
+#                       batch_size=batch_size,
+#                       shuffle=shuffle,
+#                       num_workers=num_workers,
+#                       worker_init_fn=worker_init_fn)
 
 data_loading_params = {
     

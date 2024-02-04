@@ -5,8 +5,8 @@ import torch.nn as nn
 from . import cluster
 
 BACKGROUND_LABEL = 0
-TABLE_LABEL = 1
-OBJECTS_LABEL = 2
+TABLE_LABEL = 0
+OBJECTS_LABEL = 1
 
 
 class WeightedLoss(nn.Module):

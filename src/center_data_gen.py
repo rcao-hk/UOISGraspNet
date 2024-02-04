@@ -8,12 +8,13 @@ from graspnetAPI.utils.xmlhandler import xmlReader
 from graspnetAPI.utils.utils import get_obj_pose_list, transform_points
 from graspnetAPI.utils.utils import CameraInfo, create_point_cloud_from_depth_image
 import scipy.io as scio
-from util import utilities as util_
+from .util import utilities as util_
 
 NUM_VIEWS_PER_SCENE = 256
 BACKGROUND_LABEL = 0
 TABLE_LABEL = 0
 OBJECTS_LABEL = 1
+
 num_points = 1024
 camera = 'realsense'
 root = '/media/rcao/Data/Dataset/graspnet/'

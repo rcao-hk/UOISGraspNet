@@ -4,11 +4,11 @@ import numpy as np
 import cv2
 
 # My Libraries
-import sys
-import os
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(ROOT_DIR)
-from util import utilities as util_
+# import sys
+# import os
+# ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+# sys.path.append(ROOT_DIR)
+from .util import utilities as util_
 
 ##### Useful Utilities #####
 

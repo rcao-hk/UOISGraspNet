@@ -20,8 +20,7 @@ import src.util.utilities as util_
 import src.util.flowlib as flowlib
 
 # TODO: Change this if you have more than 1 GPU
-os.environ['CUDA_VISIBLE_DEVICES'] = "0, 1"
-
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 # # Example Dataset: TableTop Object Dataset (TOD)
 
@@ -29,7 +28,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0, 1"
 
 
 # TODO: change this to the dataset you want to train on
-TOD_filepath = '/data/rcao/dataset/graspnet/'
+TOD_filepath = '/media/rcao/Data/Dataset/graspnet/'
 data_loading_params = {
 
     # Camera/Frustum parameters
@@ -39,6 +38,7 @@ data_loading_params = {
     'far': 100,
     'fov': 45,  # vertical field of view in degrees
 
+    'camera': 'realsense',
     'use_data_augmentation': True,
 
     # Multiplicative noise
