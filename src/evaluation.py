@@ -167,8 +167,8 @@ def multilabel_metrics(prediction, gt, obj_detect_threshold=0.75):
             num_obj_detected += 1
 
     # Overlap measures
-    precision = np.sum(true_positives[idx]) / np.sum(prediction.clip(0,2) == OBJECTS_LABEL)
-    recall = np.sum(true_positives[idx]) / np.sum(gt.clip(0,2) == OBJECTS_LABEL)
+    precision = np.sum(true_positives[idx]) / np.sum(prediction.clip(0,OBJECTS_LABEL) == OBJECTS_LABEL)
+    recall = np.sum(true_positives[idx]) / np.sum(gt.clip(0,OBJECTS_LABEL) == OBJECTS_LABEL)
     F_measure = (2 * precision * recall) / (precision + recall)
     if np.isnan(F_measure): # b/c precision = recall = 0
         F_measure = 0
