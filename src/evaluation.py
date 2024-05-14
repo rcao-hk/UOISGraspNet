@@ -6,8 +6,13 @@ from .util import munkres as munkres
 from .util import utilities as util_
 
 BACKGROUND_LABEL = 0
-TABLE_LABEL = 0
-OBJECTS_LABEL = 1
+# GraspNet
+# TABLE_LABEL = 0
+# OBJECTS_LABEL = 1
+
+# OCID
+TABLE_LABEL = 1
+OBJECTS_LABEL = 2
 
 
 # Code adapted from: https://github.com/davisvideochallenge/davis-2017/blob/master/python/lib/davis/measures/f_boundary.py
