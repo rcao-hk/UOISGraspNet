@@ -57,8 +57,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_root', default='/media/gpuadmin/rcao/dataset/OCID')
     parser.add_argument('--segment_result', default='/media/gpuadmin/rcao/result/uois/ocid')
-    parser.add_argument('--camera_type', default='realsense', help='Camera split [realsense/kinect]')
-    parser.add_argument('--segment_method', default='GT_bb_sam', help='Segmentation method [uois/uoais/GDS]')
+    parser.add_argument('--segment_method', default='GDS_v0.3.1', help='Segmentation method [uois/uoais/GDS]')
     cfgs = parser.parse_args()
 
     image_list = read_file(os.path.join(cfgs.dataset_root, 'data_list.txt'))

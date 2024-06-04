@@ -1,6 +1,8 @@
 import numpy as np
-result_file = 'GT_bb_sam'
-result = np.load('{}_results.npy'.format(result_file))
+method_id = 'GDS_v0.3'
+dataset = 'Graspnet'
+camera = 'realsense'
+result = np.load('{}_{}_{}_results.npy'.format(dataset, method_id, camera))
 print(result.shape)
 result_dict = dict()
 result_dict['seen'] = result[:30]
