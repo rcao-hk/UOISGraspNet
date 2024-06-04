@@ -43,9 +43,10 @@ import src.util.utilities as util_
 import src.util.flowlib as flowlib
 
 # TODO: change this to the dataset you want to train on
-graspnet_root = '/media/rcao/Data/Dataset/graspnet/'
-camera_type = 'kinect'
-mask_save_root = os.path.join(graspnet_root, 'seg_mask_v2')
+graspnet_root = '/home/user/dataset/graspnet/'
+mask_save_root = '/home/user/rcao/result/uois'
+camera_type = 'realsense'
+mask_save_root = os.path.join(mask_save_root, 'uois_v0.1_mask')
 data_loading_params = {
 
     # Camera/Frustum parameters
@@ -130,7 +131,7 @@ rrn_config = {
 
 }
 
-iter_num = 140801
+iter_num = 150000
 # dsn_filename = os.path.join('checkpoints', f'DSNWrapper_iter{iter_num}_64c_checkpoint.pth')
 dsn_filename = os.path.join('checkpoints', camera_type, 'train_DSN', f'DSNWrapper_iter{iter_num}_64c_checkpoint.pth')
 rrn_filename = os.path.join('checkpoints', 'RRN_OID_checkpoint.pth')
@@ -148,7 +149,10 @@ uois_net_3d = segmentation.UOISNet3D(uois3d_config,
 
 # ## Visualize some stuff
 dl = data_loader.get_TOD_test_dataloader(
-    graspnet_root, data_loading_params, batch_size=1, num_workers=0, shuffle=True)
+    graspnet_root, data_loading_params, batch_size=1, num_workers=0, shuffle=True, percompute_center=False)
+
+start = torch.cuda.Event(enable_timing=True)
+end = torch.cuda.Event(enable_timing=True)
 
 for i, batch in enumerate(dl):
     rgb_imgs = util_.torch_to_numpy(
@@ -163,7 +167,9 @@ for i, batch in enumerate(dl):
     N, H, W = foreground_labels.shape[:3]
 
     ### Compute segmentation masks ###
-    st_time = time()
+
+    start.record()        
+    # st_time = time()
     # fg_masks, center_offsets, object_centers, initial_masks = dsn.run_on_batch(
     #     batch)
 
@@ -173,6 +179,11 @@ for i, batch in enumerate(dl):
     # print('Total time taken for Segmentation: {0} seconds'.format(
     #     round(total_time, 3)))
     # print('FPS: {0}'.format(round(N / total_time, 3)))
+    
+    end.record()
+    torch.cuda.synchronize()
+    elasped_time = start.elapsed_time(end)
+    print('Total elasped time: {} ms'.format(elasped_time))
 
     # Get segmentation masks in numpy
     fg_masks = fg_masks.cpu().numpy()
@@ -184,11 +195,11 @@ for i, batch in enumerate(dl):
     scene_idx = int(batch['scene_dir'][0].split('/')[-2].split('_')[-1])
     view_num = batch['view_num'][0]
 
-    refined_masks = (refined_masks / np.max(refined_masks)) * 255
-    result = Image.fromarray(refined_masks.astype(np.uint8))
-    mask_save_path = os.path.join(mask_save_root, 'scene_{:04}'.format(scene_idx), camera_type)
-    os.makedirs(mask_save_path, exist_ok=True)
-    result.save(os.path.join(mask_save_path, '{:04}.png'.format(view_num)))
+    # refined_masks = (refined_masks / np.max(refined_masks)) * 255
+    # result = Image.fromarray(refined_masks.astype(np.uint8))
+    # mask_save_path = os.path.join(mask_save_root, 'scene_{:04}'.format(scene_idx), camera_type)
+    # os.makedirs(mask_save_path, exist_ok=True)
+    # result.save(os.path.join(mask_save_path, '{:04}.png'.format(view_num)))
 
     # fig_index = 1
     # for i in range(N):

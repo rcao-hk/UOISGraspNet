@@ -38,12 +38,12 @@ def worker_init_fn(worker_id):
 class Tabletop_Object_Dataset(Dataset):
     """ Data loader for Tabletop Object Dataset
     """
-    def __init__(self, base_dir, train_or_test, config):
+    def __init__(self, base_dir, train_or_test, config, percompute_center=False):
         self.base_dir = base_dir
         self.config = config
         self.camera = self.config['camera']
         self.train_or_test = train_or_test
-
+        self.percompute_center = percompute_center
         # Get a list of all scenes
         self.scene_dirs = sorted(glob.glob(self.base_dir + 'scenes/scene*/'))
 
@@ -53,7 +53,8 @@ class Tabletop_Object_Dataset(Dataset):
             self.scene_dirs = self.scene_dirs[100:]
 
         self.len = len(self.scene_dirs) * NUM_VIEWS_PER_SCENE
-        # self.load_obj_models()
+        if not self.percompute_center:
+            self.load_obj_models()
         self.name = 'GraspNet'
 
     def __len__(self):
@@ -223,25 +224,26 @@ class Tabletop_Object_Dataset(Dataset):
         self.config.update({'fy': fy})
         self.config.update({'y_offset': cy})
 
-        # camera_poses = np.load(os.path.join(scene_dir, self.camera, 'camera_poses.npy'))
-        # camera_pose = camera_poses[view_num]
-        # scene_reader = xmlReader(os.path.join(scene_dir, self.camera, 'annotations', '%04d.xml' % view_num))
-        # pose_vectors = scene_reader.getposevectorlist()
-        # obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
-        # camera_poses = np.load(os.path.join(scene_dir, self.camera, 'camera_poses.npy'))
-        # camera_pose = camera_poses[view_num]
-        # scene_reader = xmlReader(os.path.join(scene_dir, self.camera, 'annotations', '%04d.xml' % view_num))
-        # pose_vectors = scene_reader.getposevectorlist()
-        # obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
+        if not self.percompute_center:
+            camera_poses = np.load(os.path.join(scene_dir, self.camera, 'camera_poses.npy'))
+            camera_pose = camera_poses[view_num]
+            scene_reader = xmlReader(os.path.join(scene_dir, self.camera, 'annotations', '%04d.xml' % view_num))
+            pose_vectors = scene_reader.getposevectorlist()
+            obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
+            camera_poses = np.load(os.path.join(scene_dir, self.camera, 'camera_poses.npy'))
+            camera_pose = camera_poses[view_num]
+            scene_reader = xmlReader(os.path.join(scene_dir, self.camera, 'annotations', '%04d.xml' % view_num))
+            pose_vectors = scene_reader.getposevectorlist()
+            obj_list, pose_list = get_obj_pose_list(camera_pose, pose_vectors)
 
-        # scene_description = {}
-        # scene_description.update({'obj_list': obj_list})
-        # scene_description.update({'pose_list': pose_list})
-        # scene_description.update({'camera_pose': camera_pose})
-        # scene_description = {}
-        # scene_description.update({'obj_list': obj_list})
-        # scene_description.update({'pose_list': pose_list})
-        # scene_description.update({'camera_pose': camera_pose})
+            scene_description = {}
+            scene_description.update({'obj_list': obj_list})
+            scene_description.update({'pose_list': pose_list})
+            scene_description.update({'camera_pose': camera_pose})
+            scene_description = {}
+            scene_description.update({'obj_list': obj_list})
+            scene_description.update({'pose_list': pose_list})
+            scene_description.update({'camera_pose': camera_pose})
 
         # Depth image
         depth_img_filename = os.path.join(scene_dir, self.camera, 'depth', str(view_num).zfill(4) + ".png")
@@ -258,12 +260,14 @@ class Tabletop_Object_Dataset(Dataset):
         foreground_labels = util_.imread_indexed(foreground_labels_filename)
 
         # Biqi: center calculation is very slow!!!!!
-        # center_offset_labels, object_centers = self.process_label_3D(foreground_labels, xyz_img, scene_description)
-        obj_center_filename = os.path.join(self.base_dir, 'center_label', 'scene_{:04}'.format(scene_idx),
-                                           self.camera, '{:04}.npz'.format(view_num))
-        obj_center_dict = np.load(obj_center_filename)
-        center_offset_labels = obj_center_dict['offsets']
-        object_centers = obj_center_dict['centers']
+        if not self.percompute_center:
+            center_offset_labels, object_centers = self.process_label_3D(foreground_labels, xyz_img, scene_description)
+        else:
+            obj_center_filename = os.path.join(self.base_dir, 'center_label', 'scene_{:04}'.format(scene_idx),
+                                            self.camera, '{:04}.npz'.format(view_num))
+            obj_center_dict = np.load(obj_center_filename)
+            center_offset_labels = obj_center_dict['offsets']
+            object_centers = obj_center_dict['centers']
         label_abs_path = '/'.join(foreground_labels_filename.split('/')[-2:])  # Used for evaluation
 
         # Turn these all into torch tensors
@@ -286,10 +290,10 @@ class Tabletop_Object_Dataset(Dataset):
                 }
 
 
-def get_TOD_train_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=True):
+def get_TOD_train_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=True, percompute_center=False):
 
     config = config.copy()
-    dataset = Tabletop_Object_Dataset(base_dir, 'train', config)
+    dataset = Tabletop_Object_Dataset(base_dir, 'train', config, percompute_center)
     print('data num:', len(dataset))
 
     return DataLoader(dataset=dataset,
@@ -298,10 +302,10 @@ def get_TOD_train_dataloader(base_dir, config, batch_size=8, num_workers=4, shuf
                       num_workers=num_workers,
                       worker_init_fn=worker_init_fn)
 
-def get_TOD_test_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=False):
+def get_TOD_test_dataloader(base_dir, config, batch_size=8, num_workers=4, shuffle=False, percompute_center=False):
 
     config = config.copy()
-    dataset = Tabletop_Object_Dataset(base_dir, 'test', config)
+    dataset = Tabletop_Object_Dataset(base_dir, 'test', config, percompute_center)
 
     return DataLoader(dataset=dataset,
                       batch_size=batch_size,
