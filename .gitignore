@@ -4,4 +4,4 @@ checkpoints/*.pth
 checkpoints
 *.npy
 runs
-.pt
+*.pt
