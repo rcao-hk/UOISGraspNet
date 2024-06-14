@@ -1,0 +1,7 @@
+train: /media/gpuadmin/rcao/dataset/uoais_sim_yolo/train/images 
+val: /media/gpuadmin/rcao/dataset/uoais_sim_yolo/val/images 
+
+nc: 1
+
+# Classes
+names: ['object']
