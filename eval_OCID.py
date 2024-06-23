@@ -8,17 +8,38 @@ import argparse
 from src.evaluation import multilabel_metrics
 
 
+def process_label(mask_path, foreground_labels):
+    """ Process foreground_labels
+            - Map the foreground_labels to {0, 1, ..., K-1}
+
+        @param foreground_labels: a [H x W] numpy array of labels
+
+        @return: foreground_labels
+    """
+    foreground_labels[foreground_labels == 1] = 0
+    if 'table' in mask_path:
+        foreground_labels[foreground_labels == 2] = 0
+    # Find the unique (nonnegative) foreground_labels, map them to {0, ..., K-1}
+    unique_nonnegative_indices = np.unique(foreground_labels)
+    object_num = unique_nonnegative_indices.shape[0] - 1
+    mapped_labels = foreground_labels.copy()
+    for k in range(unique_nonnegative_indices.shape[0]):
+        mapped_labels[foreground_labels == unique_nonnegative_indices[k]] = k
+    foreground_labels = mapped_labels
+    return foreground_labels
+
+
 def read_file(file_path):
     f = open(file_path,"r")
     lines = f.readlines()
     data_list = []
     for line in lines:
-        data_list.append(line.strip('\n')) # 删除\n
+        data_list.append(line.strip('\n'))
     return data_list
 
 
 def eval_scene(image_path, cfgs):
-    result = np.zeros((6))
+    result = np.zeros(7)
     dataset_root = cfgs.dataset_root
     segment_root = cfgs.segment_result
     segment_method = cfgs.segment_method
@@ -29,8 +50,10 @@ def eval_scene(image_path, cfgs):
     pred_mask_path = os.path.join(segment_root, '{}_mask'.format(segment_method), image_dir, '{}.png'.format(image_name))
 
     gt_mask = np.array(Image.open(gt_mask_path))
+    gt_mask = process_label(gt_mask_path, gt_mask)
     pred_mask = np.array(Image.open(pred_mask_path))
-    eval_metrics = multilabel_metrics(gt_mask, pred_mask)
+    
+    eval_metrics = multilabel_metrics(pred_mask, gt_mask, 0.75)
     
     result[0] = eval_metrics['Objects F-measure']
     result[1] = eval_metrics['Objects Precision']
@@ -38,6 +61,7 @@ def eval_scene(image_path, cfgs):
     result[3] = eval_metrics['Boundary F-measure']
     result[4] = eval_metrics['Boundary Precision']
     result[5] = eval_metrics['Boundary Recall']
+    result[6] = eval_metrics['obj_detected_075_percentage']
     return result
 
 
@@ -57,15 +81,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_root', default='/media/gpuadmin/rcao/dataset/OCID')
     parser.add_argument('--segment_result', default='/media/gpuadmin/rcao/result/uois/ocid')
-    parser.add_argument('--segment_method', default='GDS_v0.3.1', help='Segmentation method [uois/uoais/GDS]')
+    parser.add_argument('--segment_method', default='GDS_v0.3.3', help='Segmentation method [uois/uoais/GDS]')
     cfgs = parser.parse_args()
-
+    print(cfgs)
+    
     image_list = read_file(os.path.join(cfgs.dataset_root, 'data_list.txt'))
     result_list = parallel_eval(image_list, cfgs=cfgs, proc=20)
     results = [result.get() for result in result_list]
     results = np.stack(results, axis=0)
     
-    print('Overlap Prec:{}, Rec:{}, F_score:{}, Boundary Prec:{}, Rec:{}, F_score:{}'. \
+    print('Overlap Prec:{}, Rec:{}, F_score:{}, Boundary Prec:{}, Rec:{}, F_score:{}, %75:{}'. \
         format(np.mean(results[:, 1]), np.mean(results[:, 2]), np.mean(results[:, 0]),
-               np.mean(results[:, 4]), np.mean(results[:, 5]), np.mean(results[:, 3])))
+               np.mean(results[:, 4]), np.mean(results[:, 5]), np.mean(results[:, 3]), np.mean(results[:, 6])))
     np.save('OCID_{}_results.npy'.format(cfgs.segment_method), results)
