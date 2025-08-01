@@ -50,7 +50,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_root', default='/media/gpuadmin/rcao/dataset/graspnet')
     parser.add_argument('--segment_result', default='/media/gpuadmin/rcao/result/uois/graspnet')
     parser.add_argument('--camera_type', default='realsense', help='Camera split [realsense/kinect]')
-    parser.add_argument('--segment_method', default='GDS_v0.3.2', help='Segmentation method [uois/uoais/GDS]')
+    parser.add_argument('--segment_method', default='GDS_v0.3.3', help='Segmentation method [uois/uoais/GDS]')
     cfgs = parser.parse_args()
     print(cfgs)
     

@@ -1,5 +1,5 @@
 import numpy as np
-method_id = 'GDS_v0.2.1'
+method_id = 'GDS_v0.3.3'
 dataset = 'Graspnet'
 camera = 'realsense'
 result = np.load('{}_{}_{}_results.npy'.format(dataset, method_id, camera))
